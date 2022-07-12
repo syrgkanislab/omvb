@@ -55,7 +55,7 @@ def sensitivity_bounds(est_list, eta_ysq, eta_asq, alpha=None, inds=None):
                                                    for est in est_list])
         std_lower = np.array(std_lower)
         std_upper = np.array(std_upper)
-        lower = np.mean(lower) - scipy.stats.norm.ppf(1 - alpha) * np.sqrt(np.mean(std_lower**2) + np.var(lower))        
+        lower = np.mean(lower) - scipy.stats.norm.ppf(1 - alpha) * np.sqrt(np.mean(std_lower**2) + np.var(lower))      
         upper = np.mean(upper) + scipy.stats.norm.ppf(1 - alpha) * np.sqrt(np.mean(std_upper**2) + np.var(upper))
         return lower, upper
 
@@ -99,6 +99,25 @@ def sensitivity_contours(est_list, a_upper, y_upper, alpha=None, inds=None):
     
     return X, Y, Zlower, Zupper
 
+def dml_sensitivity_contours(est_list, a_upper, y_upper, alpha=None, inds=None):
+    ''' Specialized for linear DML. Sensitivity bounds contour plots based on a many trained doubly robust
+    average moment models. If `alpha` is float, incorporates sampling uncertainty
+    at the `alpha` level. Sensitivity parameter `eta_ysq` ranges in `[0, y_upper]`
+    and parameter `eta_asq` ranges in `[0, a_upper]`.
+    '''
+    xlist = np.linspace(0, a_upper, 100)
+    ylist = np.linspace(0, y_upper, 100)
+    X, Y = np.meshgrid(xlist, ylist)
+    Zlower = np.zeros(X.shape)
+    Zupper = np.zeros(X.shape)
+    for itx in np.arange(X.shape[1]):
+        for ity in np.arange(X.shape[0]):
+            l, u = dml_sensitivity_bounds(est_list, Y[ity, itx], X[ity, itx], alpha=alpha, inds=inds)
+            Zlower[ity, itx] = l
+            Zupper[ity, itx] = u
+    
+    return X, Y, Zlower, Zupper
+
 def dml_estimate(est, inds=None):
     if inds is None:
         inds = np.arange(est.residuals_[0].shape[0])
@@ -119,18 +138,18 @@ def dml_sensitivity_bounds_single(est, eta_ysq, eta_asq, alpha=None, inds=None):
     yres, Tres, _, _ = est.residuals_
     yres, Tres = yres[inds], Tres[inds]
     nusq = np.mean(Tres ** 2)
-    sigmasq = np.mean(yres**2)
+    theta = np.mean(yres * Tres) / nusq
+    sigmasq = np.mean((yres - Tres * theta)**2)
     S = np.sqrt(sigmasq / nusq)
     Casq = eta_asq / (1 - eta_asq)
     Cgsq = eta_ysq
-    theta = np.mean(yres * Tres) / nusq
     error = S * np.sqrt(Casq * Cgsq)
 
     if alpha is None:
         return theta - error, theta + error
 
     psi_theta = (yres - Tres * theta) * Tres / nusq
-    psi_sigmasq = yres**2 - sigmasq
+    psi_sigmasq = (yres - Tres * theta)**2 - sigmasq
     psi_nusq = Tres**2 - nusq
 
     phi_plus = psi_theta + (np.sqrt(Casq * Cgsq) / (2 * S)) * (-(sigmasq/(nusq**2)) * psi_nusq + (1/nusq) * psi_sigmasq)
